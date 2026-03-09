@@ -26,7 +26,7 @@
 - name: Set up MongoDB database with test data
   # Replace the old 'hosts:' line with this.
   hosts: tag_Service_mongodb:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
-  become: yes
+  become: true
   roles:
     - mongodb_setup
   tags:
@@ -39,7 +39,7 @@
 # -----------------------------------------------------------------------------
 - name: Backup MongoDB instances
   hosts: tag_Service_mongodb:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
-  become: yes
+  become: true
   roles:
     - mongodb_backup
   tags:
@@ -52,7 +52,7 @@
 # -----------------------------------------------------------------------------
 - name: Set up Redis database
   hosts: tag_Service_redis:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
-  become: yes
+  become: true
   roles:
     - redis_setup
   tags:
@@ -64,7 +64,7 @@
 # -----------------------------------------------------------------------------
 - name: Backup Redis instances
   hosts: tag_Service_redis:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
-  become: yes
+  become: true
   roles:
     - redis_backup
   tags:

@@ -33,7 +33,7 @@
 # -----------------------------------------------------------------------------
 - name: Conditionally Restore MongoDB instances
   hosts: restore_target_group
-  become: yes
+  become: true
 
   tasks:
     - name: Run MongoDB Restoration Role (Conditional)
@@ -46,7 +46,7 @@
 # -----------------------------------------------------------------------------
 - name: Conditionally Restore Redis instances
   hosts: restore_target_group
-  become: yes
+  become: true
 
   # The 'tasks' keyword is necessary to allow conditional logic below.
   tasks:
