@@ -1,0 +1,77 @@
+# -----------------------------------------------------------------------------
+# ROLE: mongodb_backup - MongoDB Backup Automation
+#
+# PURPOSE:  Creates a full, compressed archive dump of the MongoDB database
+#           and uploads it securely to Backblaze B2.
+#
+# TARGETS:  Runs on hosts belonging to the 'mongodb_servers' group.
+#
+# IMPORTANT: This role assumes an SSH tunnel has been established from
+#            localhost:27017 on the runner to the remote database port 27017.
+#
+# License: MIT License
+# Copyright (c) 2025 Nebat Taha
+# All rights reserved.
+# -----------------------------------------------------------------------------
+
+---
+# This task ensures the MongoDB service is active before we attempt to interact with the database.
+- name: Ensure MongoDB service is running
+  ansible.builtin.service:
+    name: mongod
+    state: started
+  become: true
+
+# This task ensures that both the 'mongodb-database-tools' (for mongodump) and
+# the 'backblaze-b2' CLI are installed on the target server.
+- name: Ensure mongodump and b2 are installed
+  ansible.builtin.package:
+    name:
+      - mongodb-database-tools
+      - backblaze-b2
+    state: present
+  become: true
+
+# This task creates creates a temporary directory where the MongoDB dump will be stored before being uploaded
+- name: Create local backup directory
+  ansible.builtin.file:
+    path: /tmp/mongodb_backup
+    state: directory
+    mode: "0755"
+  # '0755' is the standard octal notation for directory permissions:
+  # Owner (7): Read, Write, Execute (Full access)
+  # Group (5): Read, Execute
+  # Others (5): Read, Execute
+  # The owner requires full control, while any other system user is allowed to read and enter the
+  # temporary directory but is explicitly blocked from writing, deleting, or modifying any files
+  # inside. The Execute permission is mandatory for both Group and Others to enter or traverse
+  #the directory.
+
+# This task creates a MongoDB dump as a single archive file.
+- name: Create MongoDB dump with a unique name
+  ansible.builtin.shell: |
+    # The --uri uses localhost (127.0.0.1), which is routed by the tunnel.
+    mongodump --uri "mongodb://127.0.0.1:27017" --archive=/tmp/mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz
+    echo "/tmp/mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz"
+  # The echo outputs the full path to the newly created backup file which is captured by the variable "backup_file_info"
+  register: backup_file_info
+  become: true
+
+# This task authenticates with Backblaze B2 and uploads the backup file to the specified bucket and path.
+- name:
+    Upload MongoDB backup to Backblaze B2
+    # Authorize and upload in a single shell block:
+    # Uses secrets passed via environment variables from the CI/CD environment.
+  ansible.builtin.shell: |
+    /usr/bin/backblaze-b2 authorize-account {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }} {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }} && \
+    /usr/bin/backblaze-b2 upload-file "nebatn" "{{ backup_file_info.stdout | trim }}" \ "mongodb/{{ backup_file_info.stdout | basename | trim }}"
+  # NOTE: 'nebatn' is the placeholder B2 bucket name. 'mongodb/' specifies the destination
+  # folder inside that bucket where the backup file will be stored.
+  become: true
+
+# This task removes the temporary directory and the backup file from the local disk.
+- name: Clean up local backup directory
+  ansible.builtin.file:
+    path: /tmp/mongodb_backup
+    state: absent
+  become: true

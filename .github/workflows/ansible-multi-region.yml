@@ -1,0 +1,127 @@
+# -----------------------------------------------------------------------------
+# WORKFLOW: Ansible Multi-Region CI/CD Production Pipeline
+#
+# ARCHITECTURE:
+#   1. Dry-Run Job: Executes 'ansible-playbook --check --diff' across all regions.
+#   2. Production-Apply Job: Requires manual approval via GitHub Environments.
+#
+# STRATEGY:
+#   - Uses a strategy matrix for regional isolation (us-east-1, eu-central-1).
+#   - Uses GitHub Environments as a gatekeeper for production changes.
+# -----------------------------------------------------------------------------
+name: Ansible Multi-Region CI/CD Production Pipeline
+
+on:
+  workflow_dispatch:
+  #push:
+  #branches: [main]
+
+jobs:
+  # -----------------------------------------------------------------------------
+  # JOB 1: Dry Run (Check Mode)
+  # -----------------------------------------------------------------------------
+  ansible-dry-run:
+    name: "Dry Run: ${{ matrix.aws_region }}"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        aws_region: ["us-east-1", "eu-central-1"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ matrix.aws_region }}
+
+      - name: Set up Ansible and Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Dependencies
+        run: |
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install community.aws
+
+      - name: Calculate Target Host Group
+        id: set_group
+        run: |
+          RAW_REGION="${{ matrix.aws_region }}"
+          CLEAN_REGION="${RAW_REGION//-/_}"
+          echo "CLEAN_REGION=$CLEAN_REGION" >> $GITHUB_OUTPUT
+
+      - name: Run Playbook in Check Mode (Dry Run)
+        run: |
+          ansible-playbook -i ansible/inventory/ ansible/playbooks/site.yml \
+            --check --diff \
+            -e "target_region=${{ steps.set_group.outputs.CLEAN_REGION }}"
+        env:
+          ANSIBLE_CONFIG: ansible/ansible.cfg
+          AWS_REGION: ${{ matrix.aws_region }}
+          BACKBLAZE_APPLICATION_KEY_ID: ${{ secrets.BACKBLAZE_APPLICATION_KEY_ID }}
+          BACKBLAZE_APPLICATION_KEY: ${{ secrets.BACKBLAZE_APPLICATION_KEY }}
+
+  # -----------------------------------------------------------------------------
+  # JOB 2: Production Apply (Manual Approval Required)
+  # -----------------------------------------------------------------------------
+  ansible-apply:
+    name: "Apply: ${{ matrix.aws_region }}"
+    needs: ansible-dry-run
+    runs-on: ubuntu-latest
+    # This environment 'production' must be created in GitHub Settings -> Environments
+    # You can set "Required reviewers" there to act as the gatekeeper.
+    environment: production
+    strategy:
+      matrix:
+        aws_region: ["us-east-1", "eu-central-1"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ matrix.aws_region }}
+
+      - name: Set up Ansible and Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Dependencies
+        run: |
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install community.aws
+
+      - name: Calculate Target Host Group
+        id: set_group
+        run: |
+          RAW_REGION="${{ matrix.aws_region }}"
+          CLEAN_REGION="${RAW_REGION//-/_}"
+          echo "CLEAN_REGION=$CLEAN_REGION" >> $GITHUB_OUTPUT
+
+      - name: Run Master Playbook (Actual Changes)
+        run: |
+          ansible-playbook -i ansible/inventory/ ansible/playbooks/site.yml \
+            -e "target_region=${{ steps.set_group.outputs.CLEAN_REGION }}"
+        env:
+          ANSIBLE_CONFIG: ansible/ansible.cfg
+          AWS_REGION: ${{ matrix.aws_region }}
+          BACKBLAZE_APPLICATION_KEY_ID: ${{ secrets.BACKBLAZE_APPLICATION_KEY_ID }}
+          BACKBLAZE_APPLICATION_KEY: ${{ secrets.BACKBLAZE_APPLICATION_KEY }}

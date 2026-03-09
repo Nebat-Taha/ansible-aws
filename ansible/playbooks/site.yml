@@ -1,0 +1,98 @@
+# -----------------------------------------------------------------------------
+# PLAYBOOK: site.yml - Master Orchestration of Infrastructure Roles
+#
+# PURPOSE: This file orchestrates the entire deployment and management workflow.
+#          It contains a sequence of plays, and each play executes all tasks
+#          listed in its corresponding role (located in the 'roles' folder)
+#          against the specified host group.
+# EXECUTION FLOW:
+#   1. Plays are executed sequentially in the order they are defined in this file.
+#   2. For the current CI/CD environment configuration, this file is generally
+#      executed in its entirety.
+#   3. TO RUN ONLY A SUBSET OF PLAYS: For immediate control, you must
+#      comment out (using '#') the plays you do not wish to execute.
+# NOTE: Future improvements may involve allowing dynamic tag selection from the
+#       CI/CD pipeline for more granular control.
+# License: MIT License
+# Copyright (c) 2025 Nebat Taha
+# All rights reserved.
+# -----------------------------------------------------------------------------
+---
+# -----------------------------------------------------------------------------
+# PLAY 1: MongoDB Setup
+# Purpose: Executes tasks listed in the 'mongodb_setup' role to install, secure,
+#          and configure MongoDB on the server(s).
+# -----------------------------------------------------------------------------
+- name: Set up MongoDB database with test data
+  # Replace the old 'hosts:' line with this.
+  hosts: tag_Service_mongodb:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
+  become: yes
+  roles:
+    - mongodb_setup
+  tags:
+    - mongodb_setup
+
+# -----------------------------------------------------------------------------
+# PLAY 2: MongoDB Backup Execution
+# Purpose: Executes tasks listed in the 'mongodb_backup_final' role to create a
+#          local archive of the database and upload it to the remote storage (B2).
+# -----------------------------------------------------------------------------
+- name: Backup MongoDB instances
+  hosts: tag_Service_mongodb:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
+  become: yes
+  roles:
+    - mongodb_backup
+  tags:
+    - mongodb_backup
+
+# -----------------------------------------------------------------------------
+# PLAY 3: Redis Setup
+# Purpose: Executes tasks listed in the 'redis_setup' role to install and configure
+#          the Redis service on its dedicated hosts.
+# -----------------------------------------------------------------------------
+- name: Set up Redis database
+  hosts: tag_Service_redis:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
+  become: yes
+  roles:
+    - redis_setup
+  tags:
+    - redis_setup
+
+# -----------------------------------------------------------------------------
+# PLAY 4: Redis Backup Execution
+# Purpose: Executes tasks listed in the 'redis_backup' role to back up Redis instances.
+# -----------------------------------------------------------------------------
+- name: Backup Redis instances
+  hosts: tag_Service_redis:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
+  become: yes
+  roles:
+    - redis_backup
+  tags:
+    - redis_backup
+# -----------------------------------------------------------------------------
+# PLAY 5: EC2 Baseline Configuration
+# Purpose: Executes tasks listed in the 'ec2_user_mgmt' role to apply foundational
+#          configurations, such as user management, on all general EC2 instances.
+# -----------------------------------------------------------------------------
+#- name: Apply EC2 instance configurations
+#  # FIX: Change 'ec2' to '@aws_ec2'.
+# '@all' is the group name automatically created by the dynamic
+# inventory plugin that contains ALL discovered EC2 instances.
+#hosts: all:!localhost
+#become: yes
+#roles:
+#- ec2_user_mgmt
+
+# -----------------------------------------------------------------------------
+# PLAY 6: AWS Policy Enforcement (Local Controller Execution)
+# Purpose: Executes tasks listed in the 's3_policy_enforcement' role to manage
+#          AWS API actions (e.g., S3 policies). This play runs on the Ansible
+#          Controller itself (localhost).
+# -----------------------------------------------------------------------------
+#- name: Enforce AWS API policies
+#  hosts: localhost
+#  connection: local
+#  gather_facts: yes
+#  roles:
+#    - s3_policy_enforcement
+

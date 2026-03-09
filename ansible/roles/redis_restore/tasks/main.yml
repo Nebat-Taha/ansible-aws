@@ -1,0 +1,84 @@
+# -----------------------------------------------------------------------------
+# ROLE: redis_restore - Redis Restore Automation
+#
+# APPROACH: Relies on the user-provided 'backup_filename' variable passed 
+# from the CI/CD workflow to ensure a specific, reliable restore point.
+# 
+# OPERATIONAL NOTE: This role uses a mandatory service STOP/START cycle.
+# - STOP is required to guarantee RPO=0 (no writes) and to allow the new 
+#   'dump.rdb' file to be replaced while the service is down.
+# - START is required because Redis only loads the RDB file from disk on startup.
+# -----------------------------------------------------------------------------
+---
+# 1. DEPENDENCY SETUP
+# -----------------------------------------------------------------------------
+
+# Ensure all necessary tools (Backblaze B2 CLI) are installed on the host.
+- name: Ensure backblaze-b2 is installed for download
+  ansible.builtin.package:
+    name: backblaze-b2
+    state: present
+  become: true
+
+# Use the Redis CLI to determine the exact location where Redis expects the dump.rdb file.
+- name: Get Redis configuration directory (dir)
+  ansible.builtin.command: redis-cli CONFIG GET dir
+  register: redis_dir_output
+  changed_when: false
+  become: true
+
+# Extract the directory path into a fact.
+- name: Set Redis data directory fact
+  ansible.builtin.set_fact:
+    redis_data_dir: "{{ redis_dir_output.stdout_lines[1] | trim }}"
+
+# 2. DOWNLOAD SPECIFIC BACKUP FILE (Using user-provided variable: backup_filename)
+# -----------------------------------------------------------------------------
+
+- name: "Assert that the backup_filename variable was provided"
+  ansible.builtin.assert:
+    that: 
+      - backup_filename is defined
+      - backup_filename | trim | length > 0
+    fail_msg: "FATAL: The 'backup_filename' variable must be provided via the CI/CD workflow."
+
+# CRITICAL STEP: Stop the Redis service immediately to prevent all client writes 
+# and ensure a consistent restore (guarantees RPO=0).
+- name: Stop Redis service for restore (FULL DOWNTIME START)
+  ansible.builtin.service:
+    name: redis-server
+    state: stopped
+  become: true
+
+# Download the specific backup directly to the final 'dump.rdb' path.
+# This ensures the new file is in place while the service is down.
+- name: Download the specific RDB backup file from Backblaze B2
+  ansible.builtin.shell: |
+    # Credentials must be exported in the shell for the B2 CLI to work persistently.
+    export B2_APPLICATION_KEY_ID={{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }}
+    export B2_APPLICATION_KEY={{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }}
+
+    # Use the user-provided variable for the file name
+    /usr/bin/backblaze-b2 download-file-by-name nebatn "{{ backup_filename | trim }}" "{{ redis_data_dir }}/dump.rdb"
+  become: true
+
+# Restart the Redis service. Redis will automatically detect and load the new 'dump.rdb' file.
+- name: Start Redis service to load new RDB file (FULL DOWNTIME END)
+  ansible.builtin.service:
+    name: redis-server
+    state: started
+  become: true
+
+
+# not for Savi, after this point 
+# ----------------- Verification -----------------
+
+# Verify that the test data from the backup is present after the restore.
+- name: Verify restored test data
+  ansible.builtin.command: redis-cli GET test_key_1
+  register: redis_restore_check
+  changed_when: false
+  
+- name: Print restored data verification
+  ansible.builtin.debug:
+    msg: "Restore successful! Verified key: {{ redis_restore_check.stdout }}"

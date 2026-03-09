@@ -1,0 +1,92 @@
+# -----------------------------------------------------------------------------
+# ROLE: mongodb_restore - MongoDB Restore Automation
+#
+#
+# APPROACH: Relies on the user-provided 'backup_filename' variable passed
+#           from the CI/CD workflow to ensure a specific, reliable restore point.
+#
+# License: MIT License
+# Copyright (c) 2025 Nebat Taha
+# All rights reserved.
+#
+# -----------------------------------------------------------------------------
+---
+# 1. DEPENDENCY SETUP
+# -----------------------------------------------------------------------------
+
+- name: "Ensure mongorestore, b2, and jq are installed"
+  ansible.builtin.package:
+    name:
+      - mongodb-database-tools
+      - backblaze-b2
+      - jq
+    state: present
+  become: true
+
+- name: "Create local restore directory"
+  ansible.builtin.file:
+    path: /tmp/mongodb_restore
+    state: directory
+    mode: "0755"
+  become: true
+
+# 2. DOWNLOAD SPECIFIC BACKUP FILE (User Input)
+# -----------------------------------------------------------------------------
+
+- name: "Assert that the backup_filename variable was provided"
+  ansible.builtin.assert:
+    that:
+      - backup_filename is defined
+      - backup_filename | trim | length > 0
+    fail_msg: "FATAL: The 'backup_filename' variable must be provided via the CI/CD workflow."
+
+- name: "Download the specific backup file from Backblaze B2"
+  ansible.builtin.shell: |
+    # Credentials must be exported in the shell for the B2 CLI to work persistently.
+    export B2_APPLICATION_KEY_ID={{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }}
+    export B2_APPLICATION_KEY={{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }}
+
+    # Use the user-provided variable for the file name
+    /usr/bin/backblaze-b2 download-file-by-name nebatn "{{ backup_filename | trim }}" /tmp/mongodb_restore/backup.gz
+  become: true
+
+# 3. RESTORATION
+# -----------------------------------------------------------------------------
+
+- name: "Stop MongoDB service for restoration (ensures clean start)"
+  ansible.builtin.service:
+    name: mongod
+    state: stopped
+  become: true
+
+- name: "Start MongoDB service to accept mongorestore connection"
+  ansible.builtin.service:
+    name: mongod
+    state: started
+  become: true
+
+- name: "Wait 5 seconds for MongoDB server to fully initialize and listen"
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: "Restore MongoDB from the downloaded backup (Secure Local Connection)"
+  ansible.builtin.shell: |
+    mongorestore --uri "mongodb://127.0.0.1:27017" --drop --archive=/tmp/mongodb_restore/backup.gz
+  become: true
+  register: restore_result
+  failed_when: restore_result.rc != 0
+
+- name: "Ensure MongoDB service is running after restoration"
+  ansible.builtin.service:
+    name: mongod
+    state: started
+  become: true
+
+# 4. CLEANUP
+# -----------------------------------------------------------------------------
+
+- name: "Clean up local restore directory"
+  ansible.builtin.file:
+    path: /tmp/mongodb_restore
+    state: absent
+  become: true

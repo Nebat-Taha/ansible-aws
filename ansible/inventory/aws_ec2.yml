@@ -1,0 +1,64 @@
+---
+#----------------------------------------------------------
+#  INVENTORY: Dynamic AWS EC2 Inventory
+# Inventory Files: aws_ec2.yml 
+# PURPOSE: Automatically discovers, organizes, and targets AWS EC2 instances
+#          based on real-time metadata and tags to support sparse, multi-region
+#          CI/CD execution.
+# ARCHITECTURE:
+# 1. Discovery: The aws_ec2.yml plugin connects directly to the AWS API
+#    to fetch all available EC2 instances.
+# 2. Dynamic Grouping: Hosts are automatically organized into groups based on:
+#    - AWS Tags (Primary): Any tag Key:Value creates a group tag_Key_Value.
+#      (e.g., Instances tagged Service:mongodb are grouped as tag_Service_mongodb).
+#    - AWS Metadata: Instances are automatically grouped by region_name (e.g., region_us_east_1).
+# 3. Targeting: Playbooks target the precise intersection of these dynamic groups
+#    (e.g., hosts: tag_Service_redis:&region_eu_central_1). This guarantees that
+#    only the intended hosts in the current CI/CD region are ever targeted.
+# NOTE: Connection variables (like 'ansible_user') must be defined in the playbook,
+#       or by default variables, as the dynamic inventory provides only host metadata.
+# License: MIT License
+# Copyright (c) 2025 Nebat Taha / Savi Finance
+# All rights reserved.
+#----------------------------------------------------------
+
+# Configuration file for the Ansible AWS EC2 Inventory Plugin
+# Location: ansible/inventory/aws_ec2.yml
+
+# Specifies the dynamic inventory plugin to use
+plugin: aws_ec2
+
+# Strict control over which instances are included (good for safety)
+strict: true
+
+# -------------------------------------------------------------
+# Grouping Strategy: How Ansible converts EC2 attributes into groups
+# -------------------------------------------------------------
+
+keyed_groups:
+  # 1. Group by Service Tag: Creates groups like 'tag_Service_mongodb' and 'tag_Service_redis'.
+  #    This targets the value of the 'Service' tag.
+  - key: tags.Service
+    separator: ""
+    prefix: tag_Service_
+    
+  # 2. Group by Region (THE FIX): Creates groups like 'region_us_east_1' and 'region_eu_central_1'.
+  #    This uses the native 'placement.region' attribute and applies a Jinja filter 
+  #    to replace '-' with '_', which is the correct way to handle dynamic group naming.
+  - key: placement.region | replace('-', '_')
+    separator: "_"
+    prefix: region
+
+# 3. Host Variable Composition: Defines connection variables
+compose:
+  # Uses the public IP address for connection (required for communication in CI/CD)
+  ansible_host: public_ip_address
+  # Sets the SSH user based on a tag (AnsibleUser), defaulting to 'ubuntu'
+  ansible_user: tags.AnsibleUser | default('ubuntu')
+
+# 4. Filters: Only find instances that are running and have a 'Service' tag
+filters:
+  instance-state-name: running
+  "tag:Service":
+    - '*'
+...

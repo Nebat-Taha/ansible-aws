@@ -1,0 +1,9 @@
+---
+- name: Ensure the 'cicduser' user exists
+  ansible.builtin.user:
+    name: cicduser
+    state: present
+    comment: "CI/CD user for automation"
+    shell: /bin/bash
+    groups: sudo
+    append: yes

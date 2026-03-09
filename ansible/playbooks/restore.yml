@@ -1,0 +1,58 @@
+# -----------------------------------------------------------------------------
+# PLAYBOOK: restore.yml - Database Restoration Workflow
+#
+# PURPOSE: This playbook is designed exclusively for disaster recovery and testing.
+#          It executes the necessary roles to download a SPECIFIC backup file
+#          from the cloud and restore it to the designated database server.
+#
+# EXECUTION CONTROL (CI/CD):
+#   This playbook is intended to be executed via the dedicated "Ansible Database Restore"
+#   GitHub Actions workflow. The workflow is responsible for:
+#   1. Generating an EPHEMERAL INVENTORY file containing a single 'restore_target_group'
+#      host using the 'target_host' input IP.
+#   2. Passing the required tag (`mongodb_restore` or `redis_restore`).
+#   3. Passing two crucial extra variables via the -e flag:
+#      - 'backup_filename': The full path to the required backup file in the B2 bucket.
+#      - 'target_region': The target AWS region.
+#
+# MANUAL EXECUTION:
+#   To run manually, you must use a tag (e.g., `--tags mongodb_restore`) and
+#   explicitly define the required extra variables and the ephemeral inventory:
+#   ansible-playbook -i restore_targets.yml restore.yml --tags mongodb_restore
+#     -e "db_to_restore=mongodb backup_filename=mongodb/mongodb-backup-20251012T033057.gz"
+#
+# License: MIT License
+# Copyright (c) 2025 Nebat Taha
+# All rights reserved.
+# -----------------------------------------------------------------------------
+---
+# This playbook targets the single, explicitly defined host from the
+# runtime-generated 'restore_targets.yml' file.
+
+# PLAY 1: MongoDB Restoration
+# -----------------------------------------------------------------------------
+- name: Conditionally Restore MongoDB instances
+  hosts: restore_target_group
+  become: yes
+
+  tasks:
+    - name: Run MongoDB Restoration Role (Conditional)
+      ansible.builtin.import_role:
+        name: mongodb_restore
+      tags: mongodb_restore
+      when: db_to_restore is defined and db_to_restore == 'mongodb'
+
+# PLAY 2: Redis Restoration
+# -----------------------------------------------------------------------------
+- name: Conditionally Restore Redis instances
+  hosts: restore_target_group
+  become: yes
+
+  # The 'tasks' keyword is necessary to allow conditional logic below.
+  tasks:
+    - name: Run Redis Restoration Role (Conditional)
+      ansible.builtin.import_role:
+        name: redis_restore
+      tags: redis_restore
+      # The 'when' clause is now correctly applied to the task, not the play.
+      when: db_to_restore is defined and db_to_restore == 'redis'

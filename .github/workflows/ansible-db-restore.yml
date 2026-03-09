@@ -1,0 +1,113 @@
+# -----------------------------------------------------------------------------
+# WORKFLOW: Ansible Database Restore (ansibledb_restore.yml)
+#
+# PURPOSE:  Provides a safe, manual mechanism for operators to restore a database
+#           from a specific cloud backup (Backblaze B2) in a disaster recovery
+#           or testing scenario.
+#
+# OPERATIONAL SAFETY NOTE: This workflow assumes application traffic has been
+# BLOCKED at the infrastructure level before execution to prevent corrupted
+# writes to the newly restored database.
+#
+# TRIGGER:  Manually via workflow_dispatch (GitHub Actions UI).
+#
+# INPUTS:
+#   - 'database': Selects the Ansible role tag (mongodb or redis).
+#   - 'aws_region': The target AWS region where the host resides.
+#   - 'target_host': The IP address of the SINGLE host to restore.
+#   - 'backup_filename': The exact file path in B2 (ensures RPO control).
+#
+# ARCHITECTURE:
+#   - Uses user inputs to construct an EPHEMERAL, RUNTIME-GENERATED INVENTORY
+#     file for a single execution.
+#   - Executes the corresponding Ansible restore role, passing the critical
+#     'backup_filename' variable.
+#
+# License: MIT License
+# Copyright (c) 2025 Nebat Taha / Savi Finance
+# All rights reserved.
+# -----------------------------------------------------------------------------
+name: Ansible Database Restore
+
+on:
+    workflow_dispatch:
+        inputs:
+            database:
+                description: "Select database to restore"
+                required: true
+                type: choice
+                options:
+                    - mongodb
+                    - redis
+            aws_region:
+                description: "Select target AWS region for the restore"
+                required: true
+                type: choice
+                options:
+                    - us-east-1
+                    - eu-central-1
+            target_host:
+                description: "IP of the SINGLE host to restore"
+                required: true
+                type: string
+
+            backup_filename:
+                description: "Full path to the backup file in the B2 bucket (e.g., mongodb/mongodb-backup-20251012T033057.gz)"
+                required: true
+                type: string
+
+jobs:
+    restore-database:
+        runs-on: ubuntu-latest
+
+        #strategy:
+        #matrix:
+        #aws_region: ["us-east-1"]
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up SSH agent
+              uses: webfactory/ssh-agent@v0.9.0
+              with:
+                  ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+            - name: Configure Backblaze B2 credentials
+              run: |
+                  echo "BACKBLAZE_APPLICATION_KEY_ID=${{ secrets.BACKBLAZE_APPLICATION_KEY_ID }}" >> $GITHUB_ENV
+                  echo "BACKBLAZE_APPLICATION_KEY=${{ secrets.BACKBLAZE_APPLICATION_KEY }}" >> $GITHUB_ENV
+
+            - name: Set up Ansible and Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.x"
+
+            - name: Install Ansible and dependencies
+              run: pip install ansible b2sdk
+
+            - name: Generate Single-Host Restore Inventory (Final Parser Fix via printf)
+              id: generate_inventory
+              run: |
+                  HOST="${{ inputs.target_host }}"
+                  DB_TYPE="${{ inputs.database }}"
+                  INVENTORY_PATH="ansible/inventory/restore_targets.yml"
+
+                  # This line uses 'printf' with '\n' to build the multi-line YAML 
+                  # content on a single line of shell code, avoiding all GitHub Actions 
+                  # YAML parsing errors related to multi-line content or indentation.
+                  printf "# Runtime generated inventory for single-host restore operation.\nrestore_target_group:\n  hosts:\n    %s:\n      ansible_user: ubuntu\n  vars:\n    db_to_restore: %s\n" "$HOST" "$DB_TYPE" > "$INVENTORY_PATH"
+
+            - name: Run Restore Playbook for Selected Database (Dynamic Region and Filename)
+              run: |
+                  # This line passes the dynamic aws_region and the user-provided backup_filename
+                  ansible-playbook \
+                    -i ansible/inventory/restore_targets.yml \
+                    ansible/playbooks/restore.yml \
+                    --tags ${{ inputs.database }}_restore \
+                    -e "target_region=${{ inputs.aws_region }} backup_filename=${{ inputs.backup_filename }}"
+
+              env:
+                  ANSIBLE_CONFIG: ansible/ansible.cfg
+                  AWS_REGION: ${{ inputs.aws_region }}
+                  # AWS_REGION: ${{ matrix.aws_region }}

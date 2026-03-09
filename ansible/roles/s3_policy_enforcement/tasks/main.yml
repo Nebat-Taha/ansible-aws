@@ -1,0 +1,23 @@
+- name: List S3 buckets in the account
+  amazon.aws.s3_bucket_info:
+  register: s3_buckets_info
+
+- name: Enable versioning on each S3 bucket
+  amazon.aws.s3_bucket:
+    name: "{{ item.name }}"
+    versioning: yes
+    state: present
+    region: "{{ lookup('env', 'AWS_REGION') }}"
+  loop: "{{ s3_buckets_info.buckets }}"
+  loop_control:
+    label: "Enabling versioning on bucket: {{ item.name }}"
+    
+- name: Make all S3 buckets private
+  amazon.aws.s3_bucket:
+    name: "{{ item.name }}"
+    state: present
+    acl: private
+    region: "{{ lookup('env', 'AWS_REGION') }}"
+  loop: "{{ s3_buckets_info.buckets }}"
+  loop_control:
+    label: "Setting ACL to private for bucket: {{ item.name }}"
