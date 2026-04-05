@@ -119,7 +119,7 @@ jobs:
             - name: Download Plan Artifact
               uses: actions/download-artifact@v4
               with:
-                  name: tfplan
+                  name: tfplan-global
                   path: terraform/global
 
             - name: Terraform Init
