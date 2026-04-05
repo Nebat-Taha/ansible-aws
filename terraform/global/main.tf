@@ -1,5 +1,5 @@
 module "ansible_sg" {
-  source       = "./modules/security_groups"
+  source       = "../modules/security_groups"
   name         = "${var.project_name}-ansible-sg"
   vpc_id       = module.vpc.vpc_id
   project_name = var.project_name
@@ -9,7 +9,7 @@ module "ansible_sg" {
 # 3. --- IDENTITY (IAM) ---
 # Defines what the Monitoring Server can do in the AWS API.
 module "iam_aws" {
-  source       = "./modules/iam"
+  source       = "../modules/iam"
   project_name = var.project_name
   role_name    = "${var.project_name}-ansible-aws-cicd-role"
 
