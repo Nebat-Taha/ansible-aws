@@ -1,6 +1,6 @@
 # .github/workflows/destroy.yml
 
-name: Terraform Destroy Resources
+name: Multi-Region Terraform Destroy Resources
 
 on:
     workflow_dispatch:
