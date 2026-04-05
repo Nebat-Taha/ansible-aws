@@ -30,16 +30,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      #- name: Set up SSH agent
+      #uses: webfactory/ssh-agent@v0.9.0
+      #with:
+      #ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ matrix.aws_region }}
 
       - name: Set up Ansible and Python
@@ -52,6 +51,30 @@ jobs:
           pip install ansible boto3 botocore
           ansible-galaxy collection install community.aws
 
+      # new line to be tested
+      - name: Generate Ephemeral SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keygen -t rsa -f ~/.ssh/id_rsa -N "" -q
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Inject SSH Keys (Instance Connect)
+        run: |
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=monitoring-system" "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].InstanceId" \
+            --output text)
+
+          for ID in $INSTANCE_IDS; do
+          aws ec2-instance-connect send-ssh-public-key \
+            --instance-id $ID \
+            --instance-os-user ubuntu \
+            --ssh-public-key file://~/.ssh/id_rsa.pub
+          done
+          echo "Waiting 10 seconds for Instance Connect to propagate..."
+          sleep 10
+
+      # end of  test point
       - name: Calculate Target Host Group
         id: set_group
         run: |
