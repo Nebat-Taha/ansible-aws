@@ -1,0 +1,137 @@
+# .github/workflows/deploy-regions.yml
+name: Multi-Region Terraform Deployment
+
+on:
+    workflow_dispatch:
+permissions:
+    contents: read
+    id-token:
+        write
+
+        # push:
+    #  branches:
+    #   - main
+    #paths:
+    # - 'terraform/regions/**' # Trigger if any regional config changes
+    #- 'terraform/modules/**' # Trigger if shared modules change
+
+jobs:
+    # --- JOB 1: PLAN ---
+    terraform_plan:
+        name: "Plan: ${{ matrix.region }}"
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false # Don't cancel other regions if one fails
+            matrix:
+                region: # Define your regions here
+                    - us-east-1
+                    - eu-central-1
+                # You could also add other variables to the matrix, e.g., environment: [dev, prod]
+        defaults:
+            run:
+                working-directory: ./terraform/regions/${{ matrix.region }}
+        #env:
+        #TF_LOG: TRACE
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Terraform
+              uses: hashicorp/setup-terraform@v3
+              with:
+                  terraform_version: 1.12.1
+
+            - name: Configure AWS credentials for ${{ matrix.region }}
+              uses: aws-actions/configure-aws-credentials@v3
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ matrix.region }} # Use the region from the matrix
+
+            - name: Terraform init -reconfigure for ${{ matrix.region }}
+              run: terraform init -reconfigure
+              working-directory: ./terraform/regions/${{ matrix.region }}
+
+            - name: Check Terraform Formatting
+              run: terraform fmt -check -recursive
+              working-directory: ./terraform/regions/${{ matrix.region }}
+
+            - name: Terraform Validate
+              run: terraform validate
+              working-directory: ./terraform/regions/${{ matrix.region }}
+
+            # New TFLint Steps
+            - name: Setup TFLint
+              uses: terraform-linters/setup-tflint@v3
+              with:
+                  # It's good practice to pin to a specific version for reproducibility
+                  tflint_version: v0.50.0
+
+            - name: Run TFLint for ${{ matrix.region }} # Make the name descriptive
+              run: tflint --recursive --format compact # The actual TFLint execution command
+              working-directory: terraform/regions/${{ matrix.region }} # IMPORTANT: Lint only the current region
+
+            # New TFSEC Scan Step
+            #- name: Run TFSEC Scan
+            # uses: aquasecurity/tfsec-action@v1.0.3  # Uses the official TFSEC GitHub Action
+            #with:
+            # working_directory: ./terraform/regions/${{ matrix.region }}
+            #- name: Run Checkov Scan
+            # Uses the official Checkov GitHub Action
+            #uses: bridgecrewio/checkov-action@v1
+            #with:
+            # The directory to scan. This should be the same as your working_directory for TFSEC.
+            #directory: ./terraform/regions/${{ matrix.region }}
+            #framework: terraform  # Specify that we are scanning Terraform files
+            #soft_fail: true  #just report warnings and not fail the build (NOT recommended for production deployments)
+            - name: Terraform Plan for ${{ matrix.region }}
+              run: terraform plan -input=false -out=tfplan
+              working-directory: ./terraform/regions/${{ matrix.region }}
+
+            - name: Upload Plan Artifact
+              # We give it a unique name so regions don't overwrite each other
+              uses: actions/upload-artifact@v4
+              with:
+                  name: tfplan-${{ matrix.region }}
+                  path: terraform/regions/${{ matrix.region }}/tfplan
+
+    # --- JOB 2: APPLY ---
+    terraform_apply:
+        name: "Apply: ${{ matrix.region }}"
+        needs: terraform_plan
+        runs-on: ubuntu-latest
+        environment: test-${{ matrix.region }} # <--- THIS IS THE HUMAN GATE
+        strategy:
+            matrix:
+                region: [us-east-1, eu-central-1]
+        defaults:
+            run:
+                working-directory: ./terraform/regions/${{ matrix.region }}
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Terraform
+              uses: hashicorp/setup-terraform@v3
+              with:
+                  terraform_version: 1.12.1
+
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v3
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ matrix.region }}
+
+            - name: Download Plan Artifact
+              uses: actions/download-artifact@v4
+              with:
+                  name: tfplan-${{ matrix.region }}
+                  path: terraform/regions/${{ matrix.region }}/
+
+            - name: Terraform Init
+              run: terraform init -reconfigure
+
+            - name: Terraform Apply
+              # Apply using the EXACT plan file we generated in Job 1
+              run: terraform apply -auto-approve tfplan

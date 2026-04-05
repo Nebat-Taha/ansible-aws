@@ -82,11 +82,37 @@ jobs:
           CLEAN_REGION="${RAW_REGION//-/_}"
           echo "CLEAN_REGION=$CLEAN_REGION" >> $GITHUB_OUTPUT
 
-      - name: Run Playbook in Check Mode (Dry Run)
+      - name: Execute Ansible with Ephemeral Keys
         run: |
+          # 1. Generate Ephemeral Key
+          ssh-keygen -t rsa -f ~/.ssh/id_rsa -N "" -q
+
+          # 2. Find Instances and Inject Key
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=monitoring-system" "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].InstanceId" \
+            --output text)
+
+          for ID in $INSTANCE_IDS; do
+            aws ec2-instance-connect send-ssh-public-key \
+              --instance-id $ID \
+              --instance-os-user ubuntu \
+              --ssh-public-key file://~/.ssh/id_rsa.pub
+          done
+
+          # 3. Run Playbook immediately while key is valid
+          CLEAN_REGION="${{ matrix.aws_region }}"
+          CLEAN_REGION="${CLEAN_REGION//-/_}"
+
           ansible-playbook -i ansible/inventory/ ansible/playbooks/site.yml \
             --check --diff \
-            -e "target_region=${{ steps.set_group.outputs.CLEAN_REGION }}"
+            -e "target_region=$CLEAN_REGION"
+
+        #- name: Run Playbook in Check Mode (Dry Run)
+        #  run: |
+        #    ansible-playbook -i ansible/inventory/ ansible/playbooks/site.yml \
+        #      --check --diff \
+        #      -e "target_region=${{ steps.set_group.outputs.CLEAN_REGION }}"
         env:
           ANSIBLE_CONFIG: ansible/ansible.cfg
           AWS_REGION: ${{ matrix.aws_region }}
@@ -109,17 +135,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+      # Remove from here
       - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
+      # to here
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ matrix.aws_region }}
 
       - name: Set up Ansible and Python
