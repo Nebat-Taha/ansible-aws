@@ -1,7 +1,7 @@
 # terraform/providers.tf
 
 terraform {
-  required_version = "= 1.12.0" # Ensuring you stay on a modern version
+  required_version = " = 1.12.0" # Ensuring you stay on a modern version
 
   required_providers {
     aws = {
