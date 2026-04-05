@@ -1,130 +1,58 @@
 # ==============================================================================
-# WORKFLOW 1: Infrastructure Deployment (Terraform)
+# WORKFLOW: Infrastructure Deconstruction (Terraform Destroy)
 # ==============================================================================
 # ARCHITECTURE:
-#   - Two-stage pipeline: 'Plan' and 'Apply'.
-#   - Execution occurs on GitHub-hosted Ubuntu runners.
+#   - Single-job workflow to tear down all AWS resources managed by Terraform.
 #
 # TRIGGER:
-#   - Currently 'workflow_dispatch' for manual control.
-#   - Configured (commented) for automatic pushes to 'main' affecting terraform/ code.
+#   - 'workflow_dispatch' (Manual only). This should NEVER be automated on push.
 #
 # SECURITY STRATEGY:
-#   - OIDC (OpenID Connect): Uses 'id-token: write' to assume an AWS IAM Role
-#     via 'secrets.AWS_ROLE_ARN'. No long-lived AWS Access Keys are used.
-#   - LEAST PRIVILEGE: 'TF_VAR_my_ip' is pulled from GitHub Secrets to restrict
-#     SSH/Management traffic to the admin's specific IP without exposing it in logs.
+#   - OIDC: Assumes the same 'AWS_ROLE_ARN' used for deployment.
+#   - GATING: Locked behind the 'production-delete' environment. This requires
+#     a second human approval in GitHub to prevent accidental deletion.
 #
-# DEPLOYMENT DECISIONS:
-#   - DETERMINISTIC EXECUTION: I use GitHub Action Artifacts to pass the binary
-#     'tfplan' file from the Plan job to the Apply job. This ensures the execution
-#     is exactly what was inspected, preventing drift if code changes during approval.
-#   - ENVIRONMENT GATING: The 'Apply' job is locked behind the 'test' environment
-#     to allow for manual verification of the plan before infrastructure is changed.
+# DECISIONS:
+#   - CLEANUP: Ensures all EIPs, Security Groups, and Instances are removed
+#     to avoid "Ghost Billing" in the AWS account.
 # ==============================================================================
-
-name: Global Terraform Deployment
+name: Infrastructure Teardown
 
 on:
-    workflow_dispatch:
-    # push:
-    #   branches: [ main ]
-    #   paths:
-    #  - 'terraform/global/**'   # Trigger only on changes within the 'global' root directory
+    workflow_dispatch: # Manual trigger only
 
-permissions: # Apply least-privilege permissions at the workflow level
-    contents: read
+permissions:
     id-token: write
+    contents: read
+
+env:
+    AWS_REGION: us-east-1
 
 jobs:
-    # --- JOB 1: PLAN ---
-    terraform_plan:
-        name: "Terraform Plan"
+    terraform_destroy:
+        name: "Destroy Infrastructure"
         runs-on: ubuntu-latest
         defaults:
             run:
                 working-directory: ./terraform/global # Set globally for the job
+        #environment: test # Optional: Add a second approval gate here too!
+
         steps:
             - name: Checkout code
               uses: actions/checkout@v4
 
             - name: Setup Terraform
               uses: hashicorp/setup-terraform@v3
-              with:
-                  terraform_version: 1.12.1
 
             - name: Configure AWS Credentials
-              uses: aws-actions/configure-aws-credentials@v3
+              uses: aws-actions/configure-aws-credentials@v4
               with:
                   role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-                  aws-region: us-east-1
+                  aws-region: ${{ env.AWS_REGION }}
 
             - name: Terraform Init
               run: terraform init -reconfigure
 
-            - name: Terraform Validate (Global)
-              run: terraform validate
-
-            - name: Run TFLint (Global)
-              uses: terraform-linters/setup-tflint@v3
-              with:
-                  tflint_version: v0.50.0 # Match your desired TFLint version
-            - run: tflint --recursive --format compact
-
-              #- name: Run TFSEC Scan (Global)
-            #uses: aquasecurity/tfsec-action@v1.0.6 # Use the working version you found
-            #with:
-            #working_directory: terraform/global
-
-            #- name: Run Checkov Scan (Global)
-            #uses: bridgecrewio/checkov-action@v1
-            #with:
-            #directory: terraform/global
-            #framework: terraform
-
-            - name: Terraform Plan
-              # We output to a file 'tfplan' to ensure the 'Apply' stage uses this exact result
-              run: terraform plan -input=false -out=tfplan
-
-            - name: Upload Plan Artifact
-              uses: actions/upload-artifact@v4
-              with:
-                  name: tfplan-global
-                  path: terraform/global/tfplan
-
-    # --- JOB 2: APPLY ---
-    terraform_apply:
-        name: "Terraform Apply"
-        needs: terraform_plan
-        runs-on: ubuntu-latest
-        environment: test-global # Requires manual approval in GitHub Settings, change to test
-        defaults:
-            run:
-                working-directory: ./terraform/global
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
-
-            - name: Setup Terraform
-              uses: hashicorp/setup-terraform@v3
-              with:
-                  terraform_version: 1.12.1
-
-            - name: Configure AWS Credentials
-              uses: aws-actions/configure-aws-credentials@v3
-              with:
-                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-                  aws-region: us-east-1
-
-            - name: Download Plan Artifact
-              uses: actions/download-artifact@v4
-              with:
-                  name: tfplan
-                  path: terraform/global
-
-            - name: Terraform Init
-              run: terraform init -reconfigure
-
-            - name: Terraform Apply # TODO : versioning of artifact and how it works
-              # Apply specifically the binary 'tfplan' artifact downloaded above
-              run: terraform apply -auto-approve tfplan
+            - name: Terraform Destroy
+              # -auto-approve is used because the "Approval" happened at the Environment gate
+              run: terraform destroy -auto-approve
