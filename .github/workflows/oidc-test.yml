@@ -1,0 +1,25 @@
+name: OIDC Connectivity Test
+
+on:
+    workflow_dispatch: # Allows you to run this manually from the Actions tab
+
+permissions:
+    id-token: write # Required for requesting the JWT
+    contents: read # Required for actions/checkout
+
+jobs:
+    test_connection:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  # This pulls the ARN you saved in GitHub Secrets
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: us-east-1
+
+            - name: Verify Identity
+              run: aws sts get-caller-identity

@@ -16,7 +16,7 @@
 #   - CLEANUP: Ensures all EIPs, Security Groups, and Instances are removed
 #     to avoid "Ghost Billing" in the AWS account.
 # ==============================================================================
-name: Infrastructure Teardown
+name: Global Infrastructure Teardown
 
 on:
     workflow_dispatch: # Manual trigger only
