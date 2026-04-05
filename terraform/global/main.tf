@@ -11,7 +11,7 @@ module "ansible_sg" {
 module "iam_aws" {
   source       = "./modules/iam"
   project_name = var.project_name
-  role_name    = "${var.project_name}-terraform-aws-cicd-role"
+  role_name    = "${var.project_name}-ansible-aws-cicd-role"
 
   # We combine the SQS permissions with the Instance Connect permission here.
   policy_json = jsonencode({

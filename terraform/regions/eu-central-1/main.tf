@@ -24,7 +24,7 @@ module "ec2_redis" {
   instance_type        = "t2.micro"
   public_subnet_id     = module.vpc.public_subnet_id
   security_group_id    = module.ec2_sg.id
-  iam_instance_profile = "${var.project_name}-terraform-aws-cicd-role"
+  iam_instance_profile = "${var.project_name}-ansible-aws-cicd-role"
 
   custom_tags = {
     Name        = "${var.project_name}-redis-server"
