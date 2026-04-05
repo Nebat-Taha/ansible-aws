@@ -1,16 +1,15 @@
 #  --- IDENTITY (IAM) ---
-# Defines what the Monitoring Server can do in the AWS API.
 module "iam_aws" {
   source       = "../modules/iam"
   project_name = var.project_name
   role_name    = "${var.project_name}-ansible-aws-cicd-role"
 
 
-  # We combine the SQS permissions with the Instance Connect permission here.
+  # We combine the ec2 permissions with the Instance Connect permission here.
   policy_json = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # Permission 1: Monitoring Data (SQS/CloudWatch)
+      # Permission 1: ec2 instance
       {
         Action = [
           "ec2:DescribeInstances",
@@ -33,4 +32,9 @@ module "iam_aws" {
       }
     ]
   })
+}
+# 2. The Instance Profile (WHAT YOU NEED TO ADD)
+resource "aws_iam_instance_profile" "cicd_profile" {
+  name = "ansible-aws-cicd-role" # Give it the exact same name as the role
+  role = aws_iam_role.cicd_role.name
 }
