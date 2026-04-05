@@ -16,6 +16,21 @@
     state: present
   become: true
 
+# Add this to redis_setup/tasks/main.yml to match your MongoDB security
+- name: Secure Redis to localhost only
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "^bind "
+    line: "bind 127.0.0.1 ::1"
+  become: true
+  register: redis_config
+
+- name: Restart Redis if config changed
+  ansible.builtin.service:
+    name: redis-server
+    state: restarted
+  when: redis_config.changed
+  become: true
 # This task ensures that the Redis service is started and enabled to run automatically
 # at system boot.
 - name: Ensure Redis service is running and enabled
@@ -62,4 +77,4 @@
 
 - name: Print test data verification
   ansible.builtin.debug:
-    var: redis_data_check.stdout    
+    var: redis_data_check.stdout

@@ -24,12 +24,13 @@
 
 # This task ensures that both the 'mongodb-database-tools' (for mongodump) and
 # the 'backblaze-b2' CLI are installed on the target server.
-- name: Ensure mongodump and b2 are installed
+- name: Ensure backup tools are present (Self-healing check)
   ansible.builtin.package:
     name:
       - mongodb-database-tools
       - backblaze-b2
     state: present
+    update_cache: no
   become: true
 
 # This task creates creates a temporary directory where the MongoDB dump will be stored before being uploaded
@@ -52,7 +53,7 @@
   ansible.builtin.shell: |
     # The --uri uses localhost (127.0.0.1), which is routed by the tunnel.
     mongodump --uri "mongodb://127.0.0.1:27017" --archive=/tmp/mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz
-    echo "/tmp/mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz"
+    echo "/tmp/mongodb_backup/mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz"
   # The echo outputs the full path to the newly created backup file which is captured by the variable "backup_file_info"
   register: backup_file_info
   become: true

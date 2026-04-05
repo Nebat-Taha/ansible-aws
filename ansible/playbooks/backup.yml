@@ -1,0 +1,24 @@
+# -----------------------------------------------------------------------------
+# PLAY 1: MongoDB Backup Execution
+# Purpose: Executes tasks listed in the 'mongodb_backup_final' role to create a
+#          local archive of the database and upload it to the remote storage (B2).
+# -----------------------------------------------------------------------------
+- name: Backup MongoDB instances
+  hosts: tag_Service_mongodb:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
+  become: true
+  roles:
+    - mongodb_backup
+  tags:
+    - mongodb_backup
+
+# -----------------------------------------------------------------------------
+# PLAY 2: Redis Backup Execution
+# Purpose: Executes tasks listed in the 'redis_backup' role to back up Redis instances.
+# -----------------------------------------------------------------------------
+- name: Backup Redis instances
+  hosts: tag_Service_redis:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
+  become: true
+  roles:
+    - redis_backup
+  tags:
+    - redis_backup

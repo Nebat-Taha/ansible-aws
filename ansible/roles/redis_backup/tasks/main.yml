@@ -1,5 +1,5 @@
 ---
-# This task ensures the Redis service is active 
+# This task ensures the Redis service is active
 # before any attempt to save or backup the data.
 - name: Ensure Redis service is running
   ansible.builtin.service:
@@ -21,44 +21,58 @@
   become: true
   register: bgsave_result
 
+- name: Wait for BGSAVE to complete
+  ansible.builtin.command: redis-cli INFO persistence
+  register: redis_info
+  until: '"rdb_bgsave_in_progress:0" in redis_info.stdout'
+  retries: 12
+  delay: 5
+  changed_when: false
+
 # This task checks the Redis configuration to determine the exact directory where the dump.rdb file is saved.
-- name: Get Redis configuration directory (dir)
+- name: Get Redis data directory
   ansible.builtin.command: redis-cli CONFIG GET dir
   register: redis_dir_output
   changed_when: false
   become: true
 
-# This variable extracts the directory path from the command output.
-- name: Set Redis data directory fact
+- name: Set Redis paths
   ansible.builtin.set_fact:
-    redis_data_dir: "{{ redis_dir_output.stdout_lines[1] | trim }}"
+    redis_data_dir: "{{ redis_dir_output.stdout_lines[1] }}"
+    temp_backup_path: "/tmp/redis-backup-{{ ansible_date_time.iso8601_basic_short }}.rdb"
+
+# This variable extracts the directory path from the command output.
+#- name: Set Redis data directory fact
+#  ansible.builtin.set_fact:
+#    redis_data_dir: "{{ redis_dir_output.stdout_lines[1] | trim }}"
 
 # This task finds the dump.rdb file in the determined Redis data directory.
-- name: Find the dump.rdb file
-  ansible.builtin.find:
-    paths: "{{ redis_data_dir }}"
-    patterns: 'dump.rdb'
-    age: '-10m' # Ensure we only find a file recently created (within the last 10 minutes), increase the time if the backup takes more than 10 minutes to complete.
-  register: rdb_file_info
+#- name: Find the dump.rdb file
+#  ansible.builtin.find:
+#    paths: "{{ redis_data_dir }}"
+#    patterns: 'dump.rdb'
+#    age: '-10m' # Ensure we only find a file recently created (within the last 10 minutes), increase the time if the backup takes more than 10 minutes to complete.
+#  register: rdb_file_info
+
+- name: Copy RDB to temp location (Don't move the original!)
+  ansible.builtin.copy:
+    src: "{{ redis_data_dir }}/dump.rdb"
+    dest: "{{ temp_backup_path }}"
+    remote_src: yes
+    mode: "0644"
+  become: true
 
 # This task uploads the Redis RDB file to Backblaze B2 with a unique, timestamped filename.
 - name: Upload Redis RDB backup to Backblaze B2
   ansible.builtin.shell: |
-    BACKUP_FILE="{{ rdb_file_info.files[0].path }}"
-    TIMESTAMP="{{ ansible_date_time.iso8601_basic_short }}"
-    FILENAME="redis-backup-${TIMESTAMP}.rdb"
-
-    
     /usr/bin/backblaze-b2 authorize-account {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }} {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }} && \
     /usr/bin/backblaze-b2 upload-file "nebatn" "${BACKUP_FILE}" "redis/${FILENAME}"
   become: true
   # Only run if a dump.rdb file was found
-  when: rdb_file_info.files | length > 0 
 
 # This task removes the temporary local dump.rdb file from the Redis data directory to clean up the workspace.
-- name: Clean up local RDB file
+- name: Clean up ONLY the temp file
   ansible.builtin.file:
-    path: "{{ rdb_file_info.files[0].path }}"
+    path: "{{ temp_backup_path }}"
     state: absent
   become: true
-  when: rdb_file_info.files | length > 0

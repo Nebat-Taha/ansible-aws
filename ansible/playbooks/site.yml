@@ -33,20 +33,7 @@
     - mongodb_setup
 
 # -----------------------------------------------------------------------------
-# PLAY 2: MongoDB Backup Execution
-# Purpose: Executes tasks listed in the 'mongodb_backup_final' role to create a
-#          local archive of the database and upload it to the remote storage (B2).
-# -----------------------------------------------------------------------------
-- name: Backup MongoDB instances
-  hosts: tag_Service_mongodb:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
-  become: true
-  roles:
-    - mongodb_backup
-  tags:
-    - mongodb_backup
-
-# -----------------------------------------------------------------------------
-# PLAY 3: Redis Setup
+# PLAY 2: Redis Setup
 # Purpose: Executes tasks listed in the 'redis_setup' role to install and configure
 #          the Redis service on its dedicated hosts.
 # -----------------------------------------------------------------------------
@@ -57,20 +44,8 @@
     - redis_setup
   tags:
     - redis_setup
-
 # -----------------------------------------------------------------------------
-# PLAY 4: Redis Backup Execution
-# Purpose: Executes tasks listed in the 'redis_backup' role to back up Redis instances.
-# -----------------------------------------------------------------------------
-- name: Backup Redis instances
-  hosts: tag_Service_redis:&region_{{ target_region | replace('-', '_') | default('UNDEFINED_REGION') }}
-  become: true
-  roles:
-    - redis_backup
-  tags:
-    - redis_backup
-# -----------------------------------------------------------------------------
-# PLAY 5: EC2 Baseline Configuration
+# PLAY 3: EC2 Baseline Configuration
 # Purpose: Executes tasks listed in the 'ec2_user_mgmt' role to apply foundational
 #          configurations, such as user management, on all general EC2 instances.
 # -----------------------------------------------------------------------------
