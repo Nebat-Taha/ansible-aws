@@ -23,7 +23,7 @@
 #     to allow for manual verification of the plan before infrastructure is changed.
 # ==============================================================================
 
-name: Global Terraform Deployment
+name: Workflow 1_Global Terraform Deployment
 
 on:
     workflow_dispatch:

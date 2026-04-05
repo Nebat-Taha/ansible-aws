@@ -1,5 +1,5 @@
 # .github/workflows/deploy-regions.yml
-name: Multi-Region Terraform Deployment
+name: Workflow 2_Multi-Region Terraform Deployment
 
 on:
     workflow_dispatch:

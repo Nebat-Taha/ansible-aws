@@ -27,7 +27,7 @@
 # Copyright (c) 2025 Nebat Taha / Savi Finance
 # All rights reserved.
 # -----------------------------------------------------------------------------
-name: Ansible Database Restore
+name: workflow 5_Ansible Database Restore
 
 on:
     workflow_dispatch:
