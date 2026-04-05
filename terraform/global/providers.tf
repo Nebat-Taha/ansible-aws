@@ -1,7 +1,7 @@
 # terraform/providers.tf
 
 terraform {
-  required_version = " = 1.12.0" # Ensuring you stay on a modern version
+  required_version = ">= 1.10.0" # Ensuring you stay on a modern version
 
   required_providers {
     aws = {
@@ -18,10 +18,12 @@ provider "aws" {
   # Every resource created (EC2, VPC, etc.) will automatically have these tags.
   default_tags {
     tags = {
-      Project   = "ansible-aws"
-      ManagedBy = "terraform"
-      Layer     = "infrastructure"
-      Owner     = "nebatn"
+      Project     = var.project_name
+      Environment = var.environment # This marks var.environment as USED for the CI/CD
+      Project     = "ansible-aws"
+      ManagedBy   = "terraform"
+      Layer       = "infrastructure"
+      Owner       = "nebatn"
     }
   }
 }

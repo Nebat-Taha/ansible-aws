@@ -5,6 +5,7 @@ module "iam_aws" {
   project_name = var.project_name
   role_name    = "${var.project_name}-ansible-aws-cicd-role"
 
+
   # We combine the SQS permissions with the Instance Connect permission here.
   policy_json = jsonencode({
     Version = "2012-10-17"
