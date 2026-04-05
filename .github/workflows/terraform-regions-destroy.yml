@@ -11,7 +11,6 @@ on:
                 type: choice
                 options:
                     - us-east-1
-                    - ap-southeast-2
                     - eu-central-1
             confirm_destroy:
                 description: 'Type "destroy" to confirm resource destruction. THIS IS DESTRUCTIVE!'

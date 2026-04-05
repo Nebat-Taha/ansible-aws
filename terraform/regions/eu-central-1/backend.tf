@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
     bucket         = "nebatn" # Replace with your bucket name
-    key            = "ansible-terraform-state/us-east-1/terraform.tfstate"
+    key            = "ansible-terraform-state/eu-central-1/terraform.tfstate"
     region         = "us-east-1" # Replace with your preferred region
     encrypt        = true
     dynamodb_table = "terraform-state-locking"
