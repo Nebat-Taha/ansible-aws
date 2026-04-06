@@ -15,6 +15,24 @@
 # -----------------------------------------------------------------------------
 
 ---
+- name: Install pip and B2 CLI
+  block:
+    - name: Ensure python3-pip is present
+      ansible.builtin.apt:
+        name: python3-pip
+        state: present
+        update_cache: yes
+
+    - name: Install latest B2 CLI via pip
+      ansible.builtin.pip:
+        name: b2
+        state: present
+        executable: pip3
+
+    - name: Remove the broken apt version
+      ansible.builtin.apt:
+        name: backblaze-b2
+        state: absent
 # This task ensures the MongoDB service is active before we attempt to interact with the database.
 - name: Ensure MongoDB service is running
   ansible.builtin.service:
@@ -59,16 +77,17 @@
   become: true
 
 # This task authenticates with Backblaze B2 and uploads the backup file to the specified bucket and path.
-- name:
-    Upload MongoDB backup to Backblaze B2
-    # Authorize and upload in a single shell block:
-    # Uses secrets passed via environment variables from the CI/CD environment.
+- name: Upload MongoDB backup to Backblaze B2
   ansible.builtin.shell: |
-    /usr/bin/backblaze-b2 authorize-account {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }} {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }} && \
-    /usr/bin/backblaze-b2 upload-file "nebatn" "{{ backup_file_info.stdout | trim }}" \ "mongodb/{{ backup_file_info.stdout | basename | trim }}"
-  # NOTE: 'nebatn' is the placeholder B2 bucket name. 'mongodb/' specifies the destination
-  # folder inside that bucket where the backup file will be stored.
-  become: true
+    # Use 'b2' instead of the full /usr/bin path to ensure the pip version is used
+    b2 authorize-account {{ b2_app_id }} {{ b2_app_key }}
+    b2 upload-file "nebatn" "{{ backup_file_info.stdout | trim }}" "mongodb/{{ backup_file_info.stdout | basename | trim }}"
+  # This hides the keys from your GitHub Action logs if the task fails
+  no_log: true
+  vars:
+    # These should be passed into the role from your playbook or host_vars
+    b2_app_id: "{{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }}"
+    b2_app_key: "{{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }}"
 
 # This task removes the temporary directory and the backup file from the local disk.
 - name: Clean up local backup directory
