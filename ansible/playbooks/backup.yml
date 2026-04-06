@@ -8,8 +8,7 @@
   become: true
   roles:
     - mongodb_backup
-  tags:
-    - mongodb_backup
+  tags: ["mongodb"]
 
 # -----------------------------------------------------------------------------
 # PLAY 2: Redis Backup Execution
@@ -20,5 +19,4 @@
   become: true
   roles:
     - redis_backup
-  tags:
-    - redis_backup
+  tags: ["redis"]
