@@ -8,12 +8,24 @@
   become: true
 
 # This task ensures the Backblaze B2 CLI is installed on the host.
-- name: Ensure backblaze-b2 is installed
-  ansible.builtin.package:
-    name: backblaze-b2
-    state: present
-  become: true
+- name: Install latest Backblaze B2 CLI
+  block:
+    - name: Ensure python3-pip is present
+      ansible.builtin.apt:
+        name: python3-pip
+        state: present
+        update_cache: yes
 
+    - name: Install B2 via pip
+      ansible.builtin.pip:
+        name: b2
+        state: present
+        executable: pip3
+
+    - name: Remove broken apt version
+      ansible.builtin.apt:
+        name: backblaze-b2
+        state: absent
 # This command instructs Redis to save a snapshot of the database to disk in the background.
 - name: Trigger Redis BGSAVE (Background Save)
   ansible.builtin.command: redis-cli BGSAVE
