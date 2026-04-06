@@ -68,7 +68,7 @@ jobs:
               --instance-os-user ubuntu \
               --ssh-public-key file://~/.ssh/id_rsa.pub
           done
-          sleep 5
+          sleep 20
 
       - name: Calculate Target Variables
         id: set_vars
@@ -83,6 +83,7 @@ jobs:
           ansible-playbook -i ansible/inventory/aws_ec2.yml \
             ansible/playbooks/site.yml \
             -e "target_region=${{ steps.set_vars.outputs.CLEAN_REGION }}" \
+            --private-key ~/.ssh/id_rsa \
             --limit "region_${{ steps.set_vars.outputs.CLEAN_REGION }}"
         env:
           ANSIBLE_CONFIG: ansible/ansible.cfg
