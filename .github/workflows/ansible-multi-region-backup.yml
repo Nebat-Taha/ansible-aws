@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         aws_region: ["us-east-1", "eu-central-1"]
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
         run: |
           pip install ansible boto3 botocore
           ansible-galaxy collection install community.aws
-      
+
       - name: Configure SSH Multiplexing (5-minute window)
         run: |
           mkdir -p ~/.ssh
@@ -54,19 +54,31 @@ jobs:
 
       - name: Inject SSH Keys (Instance Connect)
         run: |
-          # Note: Filter matches the 'Project' tag we verified in your Terraform plan
+          echo "Searching for instances in ${{ matrix.aws_region }}..."
+
+          # This looks for ANY instance that has a "Service" tag (MongoDB or Redis)
           INSTANCE_IDS=$(aws ec2 describe-instances \
-            --filters "Name=tag:Project,Values=ansible-aws" "Name=instance-state-name,Values=running" \
+            --region ${{ matrix.aws_region }} \
+            --filters "Name=instance-state-name,Values=running" "Name=tag-key,Values=Service" \
             --query "Reservations[*].Instances[*].InstanceId" \
             --output text)
 
+          if [ -z "$INSTANCE_IDS" ] || [ "$INSTANCE_IDS" == "None" ]; then
+            echo "❌ ERROR: No instances with a 'Service' tag found in ${{ matrix.aws_region }}"
+            # Let's list what DOES exist to help us debug
+            aws ec2 describe-instances --region ${{ matrix.aws_region }} --query "Reservations[*].Instances[*].{ID:InstanceId,Tags:Tags}" --output table
+            exit 1
+          fi
+
           for ID in $INSTANCE_IDS; do
+            echo "🚀 Sending key to $ID..."
             aws ec2-instance-connect send-ssh-public-key \
+              --region ${{ matrix.aws_region }} \
               --instance-id $ID \
               --instance-os-user ubuntu \
               --ssh-public-key file://~/.ssh/id_rsa.pub
           done
-          sleep 5
+          sleep 15
 
       - name: Calculate Target Variables
         id: set_vars
@@ -78,7 +90,7 @@ jobs:
       - name: Run Backup Playbook
         run: |
           ansible-playbook -i ansible/inventory/aws_ec2.yml \
-            ansible/playbooks/backup_data.yml \
+            ansible/playbooks/backup.yml \
             -e "target_region=${{ steps.set_vars.outputs.CLEAN_REGION }}" \
             --limit "region_${{ steps.set_vars.outputs.CLEAN_REGION }}"
         env:
