@@ -57,30 +57,30 @@ jobs:
 
       - name: Inject SSH Keys (Instance Connect)
         run: |
-          # Use the region from the matrix explicitly to find local instances
-          echo "Injecting keys for region ${{ matrix.aws_region }}..."
+          echo "Searching for instances in ${{ matrix.aws_region }}..."
 
+          # This looks for ANY instance that has a "Service" tag (MongoDB or Redis)
           INSTANCE_IDS=$(aws ec2 describe-instances \
             --region ${{ matrix.aws_region }} \
-            --filters "Name=tag:Project,Values=ansible-aws" "Name=instance-state-name,Values=running" \
+            --filters "Name=instance-state-name,Values=running" "Name=tag-key,Values=Service" \
             --query "Reservations[*].Instances[*].InstanceId" \
             --output text)
 
-          if [ -z "$INSTANCE_IDS" ]; then
-            echo "No running instances found in ${{ matrix.aws_region }}"
+          if [ -z "$INSTANCE_IDS" ] || [ "$INSTANCE_IDS" == "None" ]; then
+            echo "❌ ERROR: No instances with a 'Service' tag found in ${{ matrix.aws_region }}"
+            # Let's list what DOES exist to help us debug
+            aws ec2 describe-instances --region ${{ matrix.aws_region }} --query "Reservations[*].Instances[*].{ID:InstanceId,Tags:Tags}" --output table
             exit 1
           fi
 
           for ID in $INSTANCE_IDS; do
-            echo "Sending key to $ID..."
+            echo "🚀 Sending key to $ID..."
             aws ec2-instance-connect send-ssh-public-key \
               --region ${{ matrix.aws_region }} \
               --instance-id $ID \
               --instance-os-user ubuntu \
               --ssh-public-key file://~/.ssh/id_rsa.pub
           done
-
-          # Increased sleep to ensure propagation in eu-central-1
           sleep 15
 
       - name: Calculate Target Variables
@@ -97,6 +97,7 @@ jobs:
             ansible/playbooks/site.yml \
             -e "target_region=${{ steps.set_vars.outputs.CLEAN_REGION }}" \
             --private-key ~/.ssh/id_rsa \
+            -vv \
             --limit "region_${{ steps.set_vars.outputs.CLEAN_REGION }}"
         env:
           ANSIBLE_CONFIG: ansible/ansible.cfg
