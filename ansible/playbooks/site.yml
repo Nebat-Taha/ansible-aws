@@ -29,8 +29,7 @@
   become: true
   roles:
     - mongodb_setup
-  tags:
-    - mongodb_setup
+  tags: ["mongodb"]
 
 # -----------------------------------------------------------------------------
 # PLAY 2: Redis Setup
@@ -42,8 +41,7 @@
   become: true
   roles:
     - redis_setup
-  tags:
-    - redis_setup
+  tags: ["redis"]
 # -----------------------------------------------------------------------------
 # PLAY 3: EC2 Baseline Configuration
 # Purpose: Executes tasks listed in the 'ec2_user_mgmt' role to apply foundational

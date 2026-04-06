@@ -57,18 +57,31 @@ jobs:
 
       - name: Inject SSH Keys (Instance Connect)
         run: |
+          # Use the region from the matrix explicitly to find local instances
+          echo "Injecting keys for region ${{ matrix.aws_region }}..."
+
           INSTANCE_IDS=$(aws ec2 describe-instances \
+            --region ${{ matrix.aws_region }} \
             --filters "Name=tag:Project,Values=ansible-aws" "Name=instance-state-name,Values=running" \
             --query "Reservations[*].Instances[*].InstanceId" \
             --output text)
 
+          if [ -z "$INSTANCE_IDS" ]; then
+            echo "No running instances found in ${{ matrix.aws_region }}"
+            exit 1
+          fi
+
           for ID in $INSTANCE_IDS; do
+            echo "Sending key to $ID..."
             aws ec2-instance-connect send-ssh-public-key \
+              --region ${{ matrix.aws_region }} \
               --instance-id $ID \
               --instance-os-user ubuntu \
               --ssh-public-key file://~/.ssh/id_rsa.pub
           done
-          sleep 20
+
+          # Increased sleep to ensure propagation in eu-central-1
+          sleep 15
 
       - name: Calculate Target Variables
         id: set_vars
