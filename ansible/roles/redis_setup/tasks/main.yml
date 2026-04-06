@@ -1,22 +1,44 @@
+# -----------------------------------------------------------------------------
+# ROLE: redis_setup - Secure Redis Installation and Configuration
+# -----------------------------------------------------------------------------
+
 ---
-# This task ensures the package manager's cache is up to date before installing new packages.
+# -----------------------------------------------------------------------------
+# PHASE 1: Install Redis and Python Prerequisites
+# -----------------------------------------------------------------------------
+
 - name: Update package cache
   ansible.builtin.apt:
     update_cache: yes
-  changed_when: false
-  when: ansible_os_family == "Debian"
-  become: true
-
-# This task installs the Redis server and the Redis command-line interface (redis-cli)
-# using the system's package manager.
-- name: Ensure Redis server is installed
-  ansible.builtin.package:
     name:
       - redis-server
+      - python3-pip
+      - python3-venv
+      - python3-full
     state: present
   become: true
 
-# Add this to redis_setup/tasks/main.yml to match your MongoDB security
+# -----------------------------------------------------------------------------
+# PHASE 2: Professional Cloud Tools Setup (Backblaze B2)
+# -----------------------------------------------------------------------------
+
+- name: Create Virtual Environment for Backblaze B2
+  ansible.builtin.command:
+    cmd: python3 -m venv /opt/b2_venv
+    creates: /opt/b2_venv
+  become: true
+
+- name: Install latest B2 CLI into Virtual Environment
+  ansible.builtin.pip:
+    name: b2
+    virtualenv: /opt/b2_venv
+    state: present
+  become: true
+
+# -----------------------------------------------------------------------------
+# PHASE 3: Security and Service Configuration
+# -----------------------------------------------------------------------------
+
 - name: Secure Redis to localhost only
   ansible.builtin.lineinfile:
     path: /etc/redis/redis.conf
@@ -25,14 +47,6 @@
   become: true
   register: redis_config
 
-- name: Restart Redis if config changed
-  ansible.builtin.service:
-    name: redis-server
-    state: restarted
-  when: redis_config.changed
-  become: true
-# This task ensures that the Redis service is started and enabled to run automatically
-# at system boot.
 - name: Ensure Redis service is running and enabled
   ansible.builtin.service:
     name: redis-server
@@ -40,36 +54,35 @@
     enabled: true
   become: true
 
-# This task verifies the Redis service is running by using the 'redis-cli' to check its status.
-# The 'ping' command is used to confirm a connection can be established.
+- name: Restart Redis if config changed
+  ansible.builtin.service:
+    name: redis-server
+    state: restarted
+  when: redis_config.changed
+  become: true
+
+# -----------------------------------------------------------------------------
+# PHASE 4: Verification and Data Population
+# -----------------------------------------------------------------------------
+
 - name: Check Redis service status
   ansible.builtin.command: redis-cli ping
   register: redis_ping_status
   changed_when: false
 
-- name: Print Redis service status
-  ansible.builtin.debug:
-    var: redis_ping_status.stdout
-
-# This task adds a key-value pair to the Redis database using the SET command.
-- name: Set a test string key
-  ansible.builtin.command: redis-cli SET test_key_1 "ansible_redis_value_1"
+- name: Set test string keys
+  ansible.builtin.command: redis-cli SET {{ item.key }} "{{ item.value }}"
+  loop:
+    - { key: "test_key_1", value: "ansible_redis_value_1" }
+    - { key: "test_key_2", value: "ansible_redis_value_2" }
   changed_when: true
   become: true
 
-# This task sets another key with a different value.
-- name: Set a second test string key
-  ansible.builtin.command: redis-cli SET test_key_2 "ansible_redis_value_2"
-  changed_when: true
-  become: true
-
-# This task adds a Hash (similar to a document in MongoDB) with multiple fields.
 - name: Add a test hash (HSET)
   ansible.builtin.command: redis-cli HSET test_hash_key name "Ansible Test Hash" status "Ready"
   changed_when: true
   become: true
 
-# This task verifies that the data was set correctly.
 - name: Verify test data was set
   ansible.builtin.command: redis-cli GET test_key_1
   register: redis_data_check
@@ -77,4 +90,4 @@
 
 - name: Print test data verification
   ansible.builtin.debug:
-    var: redis_data_check.stdout
+    msg: "Redis Check: {{ redis_data_check.stdout }}"

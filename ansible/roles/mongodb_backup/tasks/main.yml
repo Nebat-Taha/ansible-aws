@@ -1,95 +1,57 @@
 # -----------------------------------------------------------------------------
 # ROLE: mongodb_backup - MongoDB Backup Automation
-#
-# PURPOSE:  Creates a full, compressed archive dump of the MongoDB database
-#           and uploads it securely to Backblaze B2.
-#
-# TARGETS:  Runs on hosts belonging to the 'mongodb_servers' group.
-#
-# IMPORTANT: This role assumes an SSH tunnel has been established from
-#            localhost:27017 on the runner to the remote database port 27017.
-#
-# License: MIT License
-# Copyright (c) 2025 Nebat Taha
-# All rights reserved.
 # -----------------------------------------------------------------------------
 
 ---
-- name: Install pip and B2 CLI
-  block:
-    - name: Ensure python3-pip is present
-      ansible.builtin.apt:
-        name: python3-pip
-        state: present
-        update_cache: yes
-
-    - name: Install latest B2 CLI via pip
-      ansible.builtin.pip:
-        name: b2
-        state: present
-        executable: pip3
-
-    - name: Remove the broken apt version
-      ansible.builtin.apt:
-        name: backblaze-b2
-        state: absent
-# This task ensures the MongoDB service is active before we attempt to interact with the database.
 - name: Ensure MongoDB service is running
   ansible.builtin.service:
     name: mongod
     state: started
   become: true
 
-# This task ensures that both the 'mongodb-database-tools' (for mongodump) and
-# the 'backblaze-b2' CLI are installed on the target server.
-- name: Ensure backup tools are present (Self-healing check)
-  ansible.builtin.package:
-    name:
-      - mongodb-database-tools
-      - backblaze-b2
-    state: present
-    update_cache: no
-  become: true
+# -----------------------------------------------------------------------------
+# PHASE 1: Prepare Backup Archive
+# -----------------------------------------------------------------------------
 
-# This task creates creates a temporary directory where the MongoDB dump will be stored before being uploaded
 - name: Create local backup directory
   ansible.builtin.file:
     path: /tmp/mongodb_backup
     state: directory
     mode: "0755"
-  # '0755' is the standard octal notation for directory permissions:
-  # Owner (7): Read, Write, Execute (Full access)
-  # Group (5): Read, Execute
-  # Others (5): Read, Execute
-  # The owner requires full control, while any other system user is allowed to read and enter the
-  # temporary directory but is explicitly blocked from writing, deleting, or modifying any files
-  # inside. The Execute permission is mandatory for both Group and Others to enter or traverse
-  #the directory.
+  become: true
 
-# This task creates a MongoDB dump as a single archive file.
 - name: Create MongoDB dump with a unique name
   ansible.builtin.shell: |
-    # The --uri uses localhost (127.0.0.1), which is routed by the tunnel.
-    mongodump --uri "mongodb://127.0.0.1:27017" --archive=/tmp/mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz
-    echo "/tmp/mongodb_backup/mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz"
-  # The echo outputs the full path to the newly created backup file which is captured by the variable "backup_file_info"
+    # Generate the backup file directly into the temp directory
+    FILENAME="mongodb-backup-{{ ansible_date_time.iso8601_basic_short }}.gz"
+    FULL_PATH="/tmp/mongodb_backup/$FILENAME"
+
+    mongodump --uri "mongodb://127.0.0.1:27017" --archive=$FULL_PATH --gzip
+
+    # Return the full path so it can be registered
+    echo "$FULL_PATH"
   register: backup_file_info
   become: true
 
-# This task authenticates with Backblaze B2 and uploads the backup file to the specified bucket and path.
+# -----------------------------------------------------------------------------
+# PHASE 2: Secure Cloud Upload
+# -----------------------------------------------------------------------------
+
 - name: Upload MongoDB backup to Backblaze B2
   ansible.builtin.shell: |
-    # Use 'b2' instead of the full /usr/bin path to ensure the pip version is used
-    b2 authorize-account {{ b2_app_id }} {{ b2_app_key }}
-    b2 upload-file "nebatn" "{{ backup_file_info.stdout | trim }}" "mongodb/{{ backup_file_info.stdout | basename | trim }}"
-  # This hides the keys from your GitHub Action logs if the task fails
+    # Call the binary from the Venv created in the Setup role
+    /opt/b2_venv/bin/b2 authorize-account {{ b2_app_id }} {{ b2_app_key }}
+    /opt/b2_venv/bin/b2 upload-file "nebatn" "{{ backup_file_info.stdout | trim }}" "mongodb/{{ backup_file_info.stdout | basename | trim }}"
   no_log: true
+  become: true
   vars:
-    # These should be passed into the role from your playbook or host_vars
     b2_app_id: "{{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }}"
     b2_app_key: "{{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }}"
 
-# This task removes the temporary directory and the backup file from the local disk.
+# -----------------------------------------------------------------------------
+# PHASE 3: Cleanup
+# -----------------------------------------------------------------------------
+
 - name: Clean up local backup directory
   ansible.builtin.file:
     path: /tmp/mongodb_backup

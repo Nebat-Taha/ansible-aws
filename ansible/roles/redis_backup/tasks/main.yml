@@ -1,37 +1,22 @@
+# -----------------------------------------------------------------------------
+# ROLE: redis_backup - Automated Redis Snapshot and Cloud Upload
+# -----------------------------------------------------------------------------
+
 ---
-# This task ensures the Redis service is active
-# before any attempt to save or backup the data.
 - name: Ensure Redis service is running
   ansible.builtin.service:
     name: redis-server
     state: started
   become: true
 
-# This task ensures the Backblaze B2 CLI is installed on the host.
-- name: Install latest Backblaze B2 CLI
-  block:
-    - name: Ensure python3-pip is present
-      ansible.builtin.apt:
-        name: python3-pip
-        state: present
-        update_cache: yes
+# -----------------------------------------------------------------------------
+# PHASE 1: Generate RDB Snapshot
+# -----------------------------------------------------------------------------
 
-    - name: Install B2 via pip
-      ansible.builtin.pip:
-        name: b2
-        state: present
-        executable: pip3
-
-    - name: Remove broken apt version
-      ansible.builtin.apt:
-        name: backblaze-b2
-        state: absent
-# This command instructs Redis to save a snapshot of the database to disk in the background.
 - name: Trigger Redis BGSAVE (Background Save)
   ansible.builtin.command: redis-cli BGSAVE
   changed_when: true
   become: true
-  register: bgsave_result
 
 - name: Wait for BGSAVE to complete
   ansible.builtin.command: redis-cli INFO persistence
@@ -41,7 +26,10 @@
   delay: 5
   changed_when: false
 
-# This task checks the Redis configuration to determine the exact directory where the dump.rdb file is saved.
+# -----------------------------------------------------------------------------
+# PHASE 2: Prepare Backup File
+# -----------------------------------------------------------------------------
+
 - name: Get Redis data directory
   ansible.builtin.command: redis-cli CONFIG GET dir
   register: redis_dir_output
@@ -51,22 +39,11 @@
 - name: Set Redis paths
   ansible.builtin.set_fact:
     redis_data_dir: "{{ redis_dir_output.stdout_lines[1] }}"
-    temp_backup_path: "/tmp/redis-backup-{{ ansible_date_time.iso8601_basic_short }}.rdb"
+    # We use a unique timestamp for the destination filename in B2
+    b2_filename: "redis-backup-{{ ansible_date_time.iso8601_basic_short }}.rdb"
+    temp_backup_path: "/tmp/redis-temp-backup.rdb"
 
-# This variable extracts the directory path from the command output.
-#- name: Set Redis data directory fact
-#  ansible.builtin.set_fact:
-#    redis_data_dir: "{{ redis_dir_output.stdout_lines[1] | trim }}"
-
-# This task finds the dump.rdb file in the determined Redis data directory.
-#- name: Find the dump.rdb file
-#  ansible.builtin.find:
-#    paths: "{{ redis_data_dir }}"
-#    patterns: 'dump.rdb'
-#    age: '-10m' # Ensure we only find a file recently created (within the last 10 minutes), increase the time if the backup takes more than 10 minutes to complete.
-#  register: rdb_file_info
-
-- name: Copy RDB to temp location (Don't move the original!)
+- name: Copy RDB to temp location
   ansible.builtin.copy:
     src: "{{ redis_data_dir }}/dump.rdb"
     dest: "{{ temp_backup_path }}"
@@ -74,16 +51,26 @@
     mode: "0644"
   become: true
 
-# This task uploads the Redis RDB file to Backblaze B2 with a unique, timestamped filename.
+# -----------------------------------------------------------------------------
+# PHASE 3: Secure Cloud Upload
+# -----------------------------------------------------------------------------
+
 - name: Upload Redis RDB backup to Backblaze B2
   ansible.builtin.shell: |
-    /usr/bin/backblaze-b2 authorize-account {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }} {{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }} && \
-    /usr/bin/backblaze-b2 upload-file "nebatn" "${BACKUP_FILE}" "redis/${FILENAME}"
+    # Use the Virtual Environment binary we created during Setup
+    /opt/b2_venv/bin/b2 authorize-account {{ b2_id }} {{ b2_key }}
+    /opt/b2_venv/bin/b2 upload-file "nebatn" "{{ temp_backup_path }}" "redis/{{ b2_filename }}"
+  no_log: true
   become: true
-  # Only run if a dump.rdb file was found
+  vars:
+    b2_id: "{{ lookup('env', 'BACKBLAZE_APPLICATION_KEY_ID') }}"
+    b2_key: "{{ lookup('env', 'BACKBLAZE_APPLICATION_KEY') }}"
 
-# This task removes the temporary local dump.rdb file from the Redis data directory to clean up the workspace.
-- name: Clean up ONLY the temp file
+# -----------------------------------------------------------------------------
+# PHASE 4: Cleanup
+# -----------------------------------------------------------------------------
+
+- name: Clean up temporary backup file
   ansible.builtin.file:
     path: "{{ temp_backup_path }}"
     state: absent

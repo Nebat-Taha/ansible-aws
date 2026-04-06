@@ -1,14 +1,5 @@
 # -----------------------------------------------------------------------------
 # ROLE: mongodb_setup - Secure MongoDB Installation and Configuration
-#
-# PURPOSE: Installs MongoDB (version 7.0) on the target host, secures it by
-#          binding it exclusively to the local loopback address (127.0.0.1),
-#          and performs an initial database population test.
-#
-# TARGETS: Runs on hosts belonging to the 'mongodb_servers' group.
-# License: MIT License
-# Copyright (c) 2025 Nebat Taha
-# All rights reserved.
 # -----------------------------------------------------------------------------
 
 ---
@@ -16,34 +7,27 @@
 # PHASE 1: Install MongoDB and Prerequisites
 # -----------------------------------------------------------------------------
 
-# This task installs Prerequisites such as gnupg and curl packages.
 - name: Install gnupg and necessary packages
   ansible.builtin.apt:
     name:
-      - gnupg # Required for validating the GPG key
-      - curl # Used to download the GPG key
+      - gnupg
+      - curl
+      - python3-pip
+      - python3-venv
+      - python3-full
     state: present
     update_cache: yes
   become: true
 
-# This task downloads and adds the official MongoDB GPG Key.
 - name: Add MongoDB GPG key
-  # Downloads the key and uses gpg to securely store it in the new keyring location.
   ansible.builtin.shell: |
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://pgp.mongodb.com/server-7.0.asc | \
       sudo gpg --dearmor -o /etc/apt/keyrings/mongodb-server-7.0.gpg
-  # Prevents re-downloading the key if the file already exists.
   args:
     creates: /etc/apt/keyrings/mongodb-server-7.0.gpg
   become: true
-  changed_when: true
 
-# This task adds the MongoDB repository.
-# CRITICAL COMPATIBILITY NOTE: The 'jammy' (22.04) codename is currently used
-# as the mirror for newer Ubuntu releases (like 24.04). Future maintenance
-# requires checking MongoDB's documentation for the correct, supported Ubuntu
-# release codename (e.g., if 'noble' becomes available for MongoDB 7.0).
 - name: Add MongoDB repository for Ubuntu 24.04 (using jammy mirror)
   ansible.builtin.apt_repository:
     repo: "deb [ signed-by=/etc/apt/keyrings/mongodb-server-7.0.gpg, arch=amd64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse"
@@ -51,45 +35,42 @@
     filename: "mongodb-org-7.0"
   become: true
 
-# This task ensures MongoDB and Backup Tools are installed.
 - name: Ensure MongoDB is installed
   ansible.builtin.package:
     name:
       - mongodb-org
       - mongodb-database-tools
-      - backblaze-b2
     state: present
   become: true
-  register: mongodb_install_status # Register the installation result to check dependencies if needed later.
 
-# This task checks if MongoDB is running and starts it if necessary.
-- name: Check if MongoDB is running
-  ansible.builtin.service:
-    name: mongod
-    state: started
+# -----------------------------------------------------------------------------
+# PHASE 2: Professional Cloud Tools Setup (Backblaze B2)
+# -----------------------------------------------------------------------------
+
+- name: Create Virtual Environment for Backblaze B2
+  ansible.builtin.command:
+    cmd: python3 -m venv /opt/b2_venv
+    creates: /opt/b2_venv
   become: true
 
-# This task configures MongoDB to listen ONLY on localhost (127.0.0.1) for security.
-- name: Configure MongoDB to listen ONLY on localhost (127.0.0.1) for security
+- name: Install latest B2 CLI into Virtual Environment
+  ansible.builtin.pip:
+    name: b2
+    virtualenv: /opt/b2_venv
+    state: present
+  become: true
+
+# -----------------------------------------------------------------------------
+# PHASE 3: Service Configuration and Security
+# -----------------------------------------------------------------------------
+
+- name: Configure MongoDB to listen ONLY on localhost
   ansible.builtin.replace:
     path: /etc/mongod.conf
-    regexp: '^(\s*)bindIp:.*' # Regex matches and replaces any existing bindIp setting (e.g., 0.0.0.0).
-    replace: "  bindIp: 127.0.0.1" # This ensures the database is only accessible from the local host, preventing public exposure.
+    regexp: '^(\s*)bindIp:.*'
+    replace: "  bindIp: 127.0.0.1"
   become: true
   register: config_changed
-
-# This task restarts the MongoDB service if the configuration changed.
-- name: Restart MongoDB service if config changed
-  ansible.builtin.service:
-    name: mongod
-    state: restarted
-  when: config_changed.changed
-  become: true
-
-# This task waits for MongoDB to fully start and initialize.
-- name: Wait for MongoDB to start
-  ansible.builtin.pause:
-    seconds: 10
 
 - name: Ensure MongoDB is started and enabled
   ansible.builtin.service:
@@ -97,3 +78,14 @@
     state: started
     enabled: yes
   become: true
+
+- name: Restart MongoDB service if config changed
+  ansible.builtin.service:
+    name: mongod
+    state: restarted
+  when: config_changed.changed
+  become: true
+
+- name: Wait for MongoDB to fully initialize
+  ansible.builtin.pause:
+    seconds: 10
