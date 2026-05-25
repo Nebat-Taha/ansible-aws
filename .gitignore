@@ -3,3 +3,4 @@ site_backup.yml
 mongodb_setup_ssh/
 ec2_instances_backup.yml
 backup/
+hide/
