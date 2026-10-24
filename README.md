@@ -4,6 +4,8 @@ Ansible-based configuration automation for MongoDB and Redis across multiple AWS
 
 The implementation combines dynamic inventory, reusable Ansible roles, region-based workflow matrices, and targeted restore operations. Terraform provisions the underlying infrastructure, while Ansible manages database configuration and data operations.
 
+**[View Project Portfolio](https://nebat-taha.github.io/project-ansible.html)**
+
 ## Architecture
 
 ```text
@@ -170,3 +172,9 @@ Configure these values for the target environment before running the workflows. 
 
 Terraform is included to support the complete infrastructure-to-recovery workflow. The focus of this repository is Ansible configuration automation, regional execution, and database backup and restoration.
 
+---
+## Author
+
+**Nebat Nurhussen Taha**
+
+[Portfolio](https://nebat-taha.github.io/) | [GitHub](https://github.com/Nebat-Taha)
