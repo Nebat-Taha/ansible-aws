@@ -168,11 +168,11 @@ The repository uses the following GitHub secrets for the relevant workflows:
 
 Configure these values for the target environment before running the workflows. The B2 bucket name and some infrastructure-specific values are defined in the repository and should be reviewed when adapting the implementation.
 
-## Related work
+## Related Work
 
-Terraform is included to support the complete infrastructure-to-recovery workflow. The focus of this repository is Ansible configuration automation, regional execution, and database backup and restoration.
-If you want to explore multi-region terraform setup, you can see it here  **[View Project](https://github.com/Nebat-Taha/terraform-aws)**
+This repository focuses on Ansible-based configuration automation, multi-region execution, and database backup and restoration. Terraform is included to support the end-to-end workflow, from infrastructure provisioning through database recovery.
 
+For a deeper look at the Terraform implementation and multi-region infrastructure setup, see the companion project: [**Multi-Region AWS Infrastructure with Terraform**](https://github.com/Nebat-Taha/terraform-aws).
 
 ## Author
 
