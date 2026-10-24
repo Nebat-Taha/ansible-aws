@@ -89,7 +89,7 @@ The operator selects the database type, AWS region, target host, and backup file
 
 This makes the recovery point and destination explicit for each restore operation.
 
-## Coordinated recovery workflow
+### Coordinated recovery workflow
 
 The project coordinates infrastructure provisioning, configuration management, and data restoration through three independently executable stages.
 
@@ -97,16 +97,15 @@ The project coordinates infrastructure provisioning, configuration management, a
 2. **Apply configuration:** Run the Ansible setup workflow to establish the intended database configuration on the target hosts.
 3. **Restore data:** Run the restore workflow to retrieve a selected database backup from Backblaze B2.
 
-This provides a repeatable path to build the environment from scratch, reapply configuration to reconcile drift, or extend the deployment to additional regions.
+This provides a repeatable path to rebuild the environment, reapply configuration to reconcile drift, or extend the deployment to additional regions.
 
-### Separation of configuration and routine operations
+#### Separation of configuration and routine operations
 
-Configuration, backup, and restoration are implemented as separate workflows, each with a distinct operational purpose.
+Database configuration, backup, and restoration are implemented as separate workflows, each serving a distinct operational purpose.
 
-The setup workflow applies the desired database configuration when infrastructure is created, configuration needs to be reapplied, or changes need to be reconciled. The backup workflow operates independently, allowing database data to be backed up without rerunning configuration tasks or coupling routine backups to configuration changes. Restoration is also isolated in its own workflow because it targets a specific recovery point and destination.
+The setup workflow applies the desired configuration when needed, such as when provisioning infrastructure or reconciling configuration drift. The backup workflow runs independently, allowing routine backups without rerunning database configuration tasks. Restoration is also isolated so a selected backup can be restored to a specific database host when required.
 
-This separation keeps routine data protection independent of configuration management, avoids unnecessary configuration runs during backups, and allows each operation to be executed on its own schedule or when required.
-
+This separation avoids coupling routine data protection with configuration management, allowing each operation to run independently according to its own schedule or operational needs.
 
 ## Repository structure
 
