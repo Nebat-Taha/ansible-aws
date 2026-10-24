@@ -91,15 +91,22 @@ This makes the recovery point and destination explicit for each restore operatio
 
 ## Coordinated recovery workflow
 
-The project brings infrastructure, configuration, and data recovery together as three independently executable stages.
+The project coordinates infrastructure provisioning, configuration management, and data restoration through three independently executable stages.
 
 1. **Provision infrastructure:** Use Terraform to create the required regional resources.
-2. **Apply configuration:** Run the Ansible setup workflow to configure the database hosts.
+2. **Apply configuration:** Run the Ansible setup workflow to establish the intended database configuration on the target hosts.
 3. **Restore data:** Run the restore workflow to retrieve a selected database backup from Backblaze B2.
 
-This sequence can be used to build the environment from scratch, reapply the intended configuration after drift or changes, or extend the same approach to additional regions.
+This provides a repeatable path to build the environment from scratch, reapply configuration to reconcile drift, or extend the deployment to additional regions.
 
-The stages remain separate so infrastructure provisioning, configuration management, and data restoration can each be run when needed rather than requiring a complete rebuild for every operation.
+### Separation of configuration and routine operations
+
+Configuration, backup, and restoration are implemented as separate workflows, each with a distinct operational purpose.
+
+The setup workflow applies the desired database configuration when infrastructure is created, configuration needs to be reapplied, or changes need to be reconciled. The backup workflow operates independently, allowing database data to be backed up without rerunning configuration tasks or coupling routine backups to configuration changes. Restoration is also isolated in its own workflow because it targets a specific recovery point and destination.
+
+This separation keeps routine data protection independent of configuration management, avoids unnecessary configuration runs during backups, and allows each operation to be executed on its own schedule or when required.
+
 
 ## Repository structure
 
