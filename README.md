@@ -9,31 +9,32 @@ The implementation combines dynamic inventory, reusable Ansible roles, region-ba
 ## Architecture
 
 ```text
-                    GitHub Actions
-                 (workflow orchestration)
-                           |
-                  Regional Matrix Jobs
-                     /           \
-                us-east-1      eu-central-1
-                    |               |
-              Dynamic Inventory / AWS EC2
-                    |               |
-              MongoDB Host     Redis Host
-                    |               |
-              Ansible Roles   Ansible Roles
-              Setup / Backup  Setup / Backup
-                    |               |
-                    +-------+-------+
-                            |
-                      Backblaze B2
-                   Cross-cloud backup
-                            |
-                     Restore Workflow
-                            |
-                  Selected Database Host
+                   
 
-Terraform provisions infrastructure.
-Ansible applies configuration and manages data operations.
+                         GitHub Actions
+                               |
+              +----------------+----------------+
+              |                |                |
+           Setup             Backup           Restore
+          Workflow          Workflow          Workflow
+              |                |                |
+        Regional Matrix   Regional Matrix   Selected Target
+              |                |                |
+        AWS EC2 Dynamic   AWS EC2 Dynamic   Targeted Inventory
+          Inventory         Inventory             |
+              |                |                 |
+        Ansible Setup     Ansible Backup     Ansible Restore
+              |                |                 |
+        +-----+-----+          |                 |
+        |           |          |                 |
+     MongoDB      Redis        |                 |
+        |           |          |                 |
+        +-----------+----------+-----------------+
+                    |                            |
+                    v                            v
+              Backblaze B2 <---------------- Backup Retrieval
+               Backup Storage
+
 ```
 
 ## Capabilities
@@ -173,6 +174,7 @@ Configure these values for the target environment before running the workflows. 
 This repository focuses on Ansible-based configuration automation, multi-region execution, and database backup and restoration. Terraform is included to support the end-to-end workflow, from infrastructure provisioning through database recovery.
 
 For a deeper look at the Terraform implementation and multi-region infrastructure setup, see the companion project: [**Multi-Region AWS Infrastructure with Terraform**](https://github.com/Nebat-Taha/terraform-aws).
+
 
 ## Author
 
